@@ -1,10 +1,23 @@
 #ifndef SALSA20_HPP
 #define SALSA20_HPP
 
-#include <iostream>
 #include <string>
-#include<vector>
-#include <array>
+#include <vector>
+
+/*  
+    Implementation of Salsa20 stream cipher from D.J. Bernstein
+    More info at: http://cr.yp.to/snuffle.html
+
+    This implementation was made for exercise only and is not intended for productional use.
+    I can not gurantee it from being free of mistakes or possible side-channel attacks.
+
+    It was manually tested against some testvectors from included test_vectors_256 file
+    (key and nonce interpreted as hex, stream = Salsa20::encryptBytes(input=nullvector))
+
+    Threre are also tests of the encryption functions built in, with values from http://cr.yp.to/snuffle/spec.pdf
+
+    (only tested on little endian system running Linux)
+*/
 
 class Salsa20 {
     
@@ -20,30 +33,32 @@ class Salsa20 {
 
     uint32_t rotate(const uint32_t val, const uint8_t bits);
     void initMatrix(const uint32_t key[8], const size_t key_bitlen);
-    void incrementCounter();
+    void keyStreamBlock(uint8_t* out_block);
 
+    // internal state, initialized with 0, will get changed in initMatrix and keyStreamBlock
     uint32_t _matrix[4][4] = {0};
-    //std::array<std::array<uint32_t, 4>, 4> _matrix;
-    uint32_t _stream_pos = 0;
 
 public:
 
+    /*  constructors for key as string or byte sequence
+        in case of key string, if hex_key it will get interpreted as hex chars
+
+        will accespt either 16 or 32 byte keys, exception will get thrown at different sizes */
     Salsa20(const std::string key, bool hex_key);
     Salsa20(std::vector<uint8_t> key);
 
-    void keyStreamBlock(uint8_t* out_block);
-
+    // set Nonce/IV, will also set counter to 0
     void setNonce(const std::string nonce_hex);
     void setNonce(const uint64_t nonce);
 
-    void setCounter(const std::string counter_hex);
-    void setCounter(const uint64_t counter);
+    /*  encrypt bytes from input into output
+        input will stay unchanged */
+    void encryptBytes(const uint8_t* input, uint8_t* output, const size_t num_bytes);
+    void encryptBytes(const std::vector<uint8_t>& input, std::vector<uint8_t>& output);
 
-    void encryptBytes(uint8_t* input, uint8_t* output, const size_t num_bytes);
-
-    void dbgPrintMatrix(const std::string str);
-
-
+    /*  test-cases for every (private) function of encryption process
+    (values from http://cr.yp.to/snuffle/spec.pdf)  
+    assertions on output of each test-case */
     void tests();
 };
 

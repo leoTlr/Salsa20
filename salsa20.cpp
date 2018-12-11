@@ -1,20 +1,36 @@
-#include <cstring> // memset
+#include <cstring> // memcpy
 #include <cassert>
 #include <algorithm> // std::all_of()
 #include <sstream> // hex str to ulong conversion
-#include <iomanip> // std::hex
 #include <stdlib.h> // strtoul()
-#include <limits.h> // Salsa20::incrementCounter()
 #include <stdint.h> // uintX_t types
-#include <stdexcept> //std::length_error
+#include <stdexcept> //std::length_error, std::invalid_argument
 
 #include "salsa20.hpp"
 
 using namespace std;
 
+/*  
+    Implementation of Salsa20 stream cipher from D.J. Bernstein
+    More info at: http://cr.yp.to/snuffle.html
+
+    This implementation was made for exercise only and is not intended for productional use.
+    I can not gurantee it from being free of mistakes or possible side-channel attacks.
+
+    It was manually tested against some testvectors from included test_vectors_256 file
+    (key and nonce interpreted as hex, stream = Salsa20::encryptBytes(input= nullvector of 512 byte))
+
+    Threre are also tests of the encryption functions built in, with values from http://cr.yp.to/snuffle/spec.pdf
+
+    (only tested on little endian system running Linux)
+
+*/
+
+
 /*  Constructor for key as string.
     If hex_key is set, iterpreted as hex chars, else ascii
-    Only 16 or 32 byte keys allowed, else an Exception is thrown    */ 
+    Only 16 or 32 byte keys allowed, else an Exception is thrown
+    will also throw exception if hex_key is set but not all chars are hex   */ 
 Salsa20::Salsa20(const string key_str, bool hex_key) {
     uint32_t key[8];
 
@@ -40,9 +56,11 @@ Salsa20::Salsa20(const string key_str, bool hex_key) {
 
     case true: // interpret as hex string
 
-        if (!(key_str.size()==32 || key_str.size()==64)) {
+        if (!(key_str.size()==32 || key_str.size()==64))
             throw length_error("Keylength has to be 16 or 32 byte (32 or 64 hex chars, no 0x prefix)"); 
-        }
+
+        if (!(all_of(key_str.begin(), key_str.end(), ::isxdigit)))
+            throw invalid_argument("if hex_key is set key needs to contain only hex chars (also no 0x prefix)");
 
         // 8 keystr hex chars -> one 32bit word
         for (uint8_t i=0, j=0; i<key_str.length(); i+=8, j++)
@@ -66,10 +84,8 @@ Salsa20::Salsa20(const vector<uint8_t> key) {
 
     uint32_t key_words[8];
 
-    for (uint8_t i=0, j=0; (i < (key.size() / 4) && j < key.size()); i++, j+=4) {
+    for (uint8_t i=0, j=0; (i < (key.size() / 4) && j < key.size()); i++, j+=4)
         key_words[i] = littleEndianWordFromBytes(&key[j]);
-        //cout << "kwrds " << i << " "<<(unsigned) key_words[i] << " "<< (unsigned) key[j] << endl;
-    }
 
     // if keysize 16 byte duplicate into the remaining 16 byte
     if (key.size() == 16) {
@@ -95,22 +111,22 @@ void Salsa20::bytesFromLittleEndianWord(const uint32_t word, uint8_t* bytes) {
     bytes[3] = word >> 24;
 };
 
+/*  initialize internal matrix using uint32_t key[8]
+    constants depend on keylength
+
+    Nonce and Counter 0 by default
+    use setNonce() and setCounter()
+*/
 void Salsa20::initMatrix(const uint32_t key[8], const size_t keylen) {
     assert(sizeof(&key) == 8);
     assert(keylen == 16 || keylen == 32);    
-
-    /*  init matrix using uint32_t key[8]
-        constants depend on keylength
-
-        Nonce and Counter 0 by default
-        use setNonce() and setCounter()
-    */
 
     static const char constants_32byte_key[17] = "expand 32-byte k";
     static const char constants_16byte_key[17] = "expand 16-byte k";
 
     const char* constants;
 
+    // decide which constants to use depending on key length
     if (keylen == 32)
         constants = constants_32byte_key;
     else if (keylen == 16)
@@ -123,9 +139,9 @@ void Salsa20::initMatrix(const uint32_t key[8], const size_t keylen) {
 
     _matrix[1][0] = key[3];
     _matrix[1][1] = littleEndianWordFromBytes((const uint8_t *) (constants+4));
-    // 2 * nonce
+    // 2 * nonce (default 0)
 
-    // 2 * counter
+    // 2 * counter (default 0)
     _matrix[2][2] = littleEndianWordFromBytes((const uint8_t *) (constants+8)); 
     _matrix[2][3] = key[4];
 
@@ -135,49 +151,29 @@ void Salsa20::initMatrix(const uint32_t key[8], const size_t keylen) {
     _matrix[3][3] = littleEndianWordFromBytes((const uint8_t *) (constants+12));
 }
 
-// set nonce to nonce and counter to 0 as nonce is used as IV
+// set nonce to nonce, set counter to 0 as nonce is used as IV
 void Salsa20::setNonce(const uint64_t nonce) {
     
     _matrix[1][2] = (uint32_t) ((nonce & 0xffffffff00000000) >> 32);
     _matrix[1][3] = (uint32_t) ((nonce & 0x00000000ffffffff) >> 32);
-    setCounter(0);
+    _matrix[2][0] = 0;
+    _matrix[2][1] = 0;
 }
 
-// nonce/IV interpreted as hex chars
-// set nonce to (uint32_t) hex_str and counter to 0 as nonce is used as IV
+/*  nonce/IV interpreted as hex chars
+    set nonce to (uint32_t) hex_str and counter to 0 as nonce is used as IV
+    will throw exceptions if length other than 8 byte if non-hex chars in key (also if 0x prefix)   */
 void Salsa20::setNonce(const string hex_str) {
-    assert(hex_str.length() == 16);
+    if (!(hex_str.size()==16))
+        throw length_error("Nonce has to be 8 byte (16 hex chars, no 0x prefix)"); 
+
+    if (!(all_of(hex_str.begin(), hex_str.end(), ::isxdigit)))
+        throw invalid_argument("nonce needs to contain only hex chars (also no 0x prefix)");
 
     _matrix[1][2] = hexCharsToLittleEndianWord(hex_str, 0);
     _matrix[1][3] = hexCharsToLittleEndianWord(hex_str, 8);
-    setCounter(0);
-}
-
-void Salsa20::setCounter(const uint64_t counter) {
-
-    _matrix[2][0] = (uint32_t) ((counter & 0xffffffff00000000) >> 32);
-    _matrix[2][1] = (uint32_t) ((counter & 0x00000000ffffffff) >> 32);
-}
-
-// set counter/IV from hex string
-void Salsa20::setCounter(const string hex_str) {
-    assert(hex_str.length() == 16);
-
-    _matrix[2][0] = hexCharsToLittleEndianWord(hex_str, 0);
-    _matrix[2][1] = hexCharsToLittleEndianWord(hex_str, 8);
-}
-
-void Salsa20::incrementCounter() {
-    // try to increment counter, exit if too large
-    // counter is 2*uint32 at _matrix[1][2] and _matrix[1][3] 
-
-    if (_matrix[1][3] == UINT32_MAX) {
-        if (_matrix[1][2] == UINT32_MAX) {
-            cerr << "ERROR: Counter too large" << endl;
-            exit(EXIT_FAILURE);
-        }
-        _matrix[1][2]++;
-    } else _matrix[1][3]++;
+    _matrix[2][0] = 0;
+    _matrix[2][1] = 0;
 }
 
 // quarter-round on each row
@@ -207,6 +203,7 @@ uint32_t Salsa20::rotate(const uint32_t val, const uint8_t bits) {
     return (val << bits) | (val >> (32 - bits));
 }
 
+// main function of encryption process
 void Salsa20::quarterRound(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d) {
     b ^= rotate((a+d), 7);
     c ^= rotate((b+a), 9);
@@ -219,7 +216,7 @@ void Salsa20::keyStreamBlock(uint8_t* out_block) {
 
     // make copy of matrix as we need the original matrix later 
     uint32_t state[4][4];
-    memcpy(&state, &_matrix, sizeof(_matrix)); cout << 4*4*sizeof(uint32_t) << endl;
+    memcpy(&state, &_matrix, sizeof(_matrix));
     
     // 10 double-rounds -> 20 rounds
     for (uint8_t i=0; i<20; i+=2)
@@ -231,42 +228,44 @@ void Salsa20::keyStreamBlock(uint8_t* out_block) {
             state[row][col] += _matrix[row][col];
 
     // split state into bytes and fill out_block
-    //int i=0;
     for (uint8_t row=0, i=0; row<4; row++) {
         for (uint8_t col=0; col<4; col++) {
-            cout << hex << (unsigned)state[row][col] << " ";
             bytesFromLittleEndianWord(state[row][col], out_block+i);
             i+=4;
-        } cout << endl;
+        }
     }
 
-    state[1][2]++;
-    cout << "ctr : " << !state[1][2] << " " << (unsigned)state[1][2] <<" " << (unsigned)state[1][3]<< endl;
-    if (!state[1][2])
-        state[1][3]++;
-
     // increment counter
-    //uint64_t ctr = (( (uint64_t) _matrix[1][2] << 32) + _matrix[1][3]);
-    //incrementCounter();
+    _matrix[2][0]++;
+    if (!_matrix[2][0])
+        _matrix[2][1]++; 
 }
 
-void Salsa20::encryptBytes(uint8_t* input, uint8_t* output, const size_t num_bytes) {
+// encrypt num_bytes bytes from input into output
+void Salsa20::encryptBytes(const uint8_t* input, uint8_t* output, const size_t num_bytes) {
     assert(input != nullptr && output != nullptr);
     if (num_bytes==0) return;
 
     // allocate once and reuse it
-    static uint8_t block[64] ={0};
+    static uint8_t block_buf[64] ={0};
     
     for (size_t i=0; i<num_bytes; i++) {
 
         // get new block of keystream after every 64 bytes
-        _stream_pos %= 64;
-        if (_stream_pos == 0) 
-            keyStreamBlock(block);
+        if (i%64 == 0) 
+            keyStreamBlock(block_buf);
         
         // xor input byte with keystream byte incrementing pointers
-        *(output++) = block[_stream_pos++] ^ *(input++);
+        *(output++) = block_buf[(i%64)] ^ *(input++);
     }
+}
+
+// wrapper to use encrytBytes with std::vector
+void Salsa20::encryptBytes(const vector<uint8_t>& input, vector<uint8_t>& output) {
+    if (input.size() == 0) return;
+
+    output.reserve(input.size());
+    encryptBytes(input.data(), output.data(), input.size());
 }
 
 // interpret string as hex and put values in littleEndianWordFromBytes()
@@ -371,36 +370,9 @@ void Salsa20::tests(){
                                     118,40,152,157,180,57,27,94,107,42,236,35,27,111,114,114,
                                     219,236,232,135,111,155,110,18,24,232,95,158,179,19,48,202};
     keyStreamBlock(out_block);
-    cout << "in_block" << endl;
-    for (int i=0; i<64; i++) {
-        if (i!=0 && i%16==0) cout << "\n";
-        cout << hex << setw(2) << (unsigned) ksb_tst_bytes[i] << " ";
-    }
-    cout << endl << "out_block" << endl;
-    for (int i=0; i<64; i++) {
-        if (i!=0 && i%16==0) cout << "\n";
-        cout << hex << setw(2) << (unsigned) out_block[i] << " ";
-    }
-    cout << endl << "correct" << endl;
-    for (int i=0; i<64; i++) {
-        if (i!=0 && i%16==0) cout << "\n";
-        cout << hex << setw(2) << (unsigned) out_block_correct[i] << " ";
-    }
-    cout << endl;
     assert(memcmp(out_block, out_block_correct, sizeof(out_block)) == 0);
 
     // restore original matrix
     memcpy(_matrix, matrix_save, sizeof(_matrix));
     // end of keystreamBlock test--------------------------------------------------------------------
-
-}
-
-void Salsa20::dbgPrintMatrix(const string str) {
-    cout << str << endl;
-    for(int i=0; i<4; i++){
-        for(int j=0; j<4; j++){
-            cout << hex << setw(8) << _matrix[i][j] <<" ";
-        }
-        cout << "\n";
-    } cout << endl;
 }

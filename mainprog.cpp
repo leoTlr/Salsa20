@@ -7,6 +7,8 @@
 
 #include "salsa20.hpp"
 
+#define CHUNKSIZE 64 // bytes
+
 using namespace std;
 
 /*  Small program to show sample usage of this Salsa20 cipher implementation
@@ -83,19 +85,36 @@ int main(int argc, char** argv){
 
     // -------------- end of input validation -------------
 
-    uint8_t inblock[64];
-    uint8_t outblock[64];
+    uint8_t inblock[CHUNKSIZE];
+    uint8_t outblock[CHUNKSIZE];
+    int filesize;
 
-    // encrypt infile into outfile in 64 by te chunks
-    while (infile.good() && !infile.eof() && outfile.good()) {
-        memset(inblock, 0, sizeof(inblock));
-        memset(outblock, 0, sizeof(outblock));
+    // get filesize
+    infile.seekg(0, infile.end);
+    filesize = infile.tellg();
+    infile.seekg(0, infile.beg);
+    if (filesize < 0) {
+        cerr << "Error getting filesize" << endl;
+        exit(EXIT_FAILURE);
+    } 
 
-        infile.read((char*)&inblock, sizeof(inblock));
+    // encrypt infile into outfile in CHUNKSIZE byte chunks
+    for (int bytes_left=filesize, nr_bytes; bytes_left>=0; bytes_left-=CHUNKSIZE) {
 
-        s20.encryptBytes(inblock, outblock, sizeof(inblock));
+        if (!infile.good()) {
+            cerr << "Error reading infile" << endl;
+            exit(EXIT_FAILURE);            
+        } else if (!outfile.good()) {
+            cerr << "Error writing outfile" << endl;
+            exit(EXIT_FAILURE);            
+        }
 
-        outfile.write((char*)outblock, sizeof(outblock));
+        nr_bytes = (bytes_left >= CHUNKSIZE) ? CHUNKSIZE : bytes_left;
+
+        infile.read((char*)&inblock, nr_bytes);
+        s20.encryptBytes(inblock, outblock, nr_bytes);
+        outfile.write((char*)outblock, nr_bytes);        
+        
     }
 
     infile.close();

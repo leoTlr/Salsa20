@@ -3,17 +3,14 @@
 #include <string>
 #include <vector>
 #include <stdexcept>
-#include <cstring> // memset
 
 #include "salsa20.hpp"
-
-#define CHUNKSIZE 64 // bytes
 
 using namespace std;
 
 /*  Small program to show sample usage of this Salsa20 cipher implementation
 
-    Encrypt infile with Salsa20 into outfile in 64byte blocks
+    Encrypt infile with Salsa20 into outfile
 */
 
 void usage(string progname) {
@@ -85,8 +82,6 @@ int main(int argc, char** argv){
 
     // -------------- end of input validation -------------
 
-    uint8_t inblock[CHUNKSIZE];
-    uint8_t outblock[CHUNKSIZE];
     int filesize;
 
     // get filesize
@@ -98,23 +93,19 @@ int main(int argc, char** argv){
         exit(EXIT_FAILURE);
     } 
 
-    // encrypt infile into outfile in CHUNKSIZE byte chunks
-    for (int bytes_left=filesize, nr_bytes; bytes_left>=0; bytes_left-=CHUNKSIZE) {
+    vector<uint8_t> input (filesize);
 
-        if (!infile.good()) {
-            cerr << "Error reading infile" << endl;
-            exit(EXIT_FAILURE);            
-        } else if (!outfile.good()) {
-            cerr << "Error writing outfile" << endl;
-            exit(EXIT_FAILURE);            
-        }
-
-        nr_bytes = (bytes_left >= CHUNKSIZE) ? CHUNKSIZE : bytes_left;
-
-        infile.read((char*)&inblock, nr_bytes);
-        s20.encryptBytes(inblock, outblock, nr_bytes);
-        outfile.write((char*)outblock, nr_bytes);        
-        
+    // encrypt input bytevector in place
+    if (!infile.good()) {
+        cerr << "Error reading infile" << endl;
+        exit(EXIT_FAILURE);            
+    } else if (!outfile.good()) {
+        cerr << "Error writing outfile" << endl;
+        exit(EXIT_FAILURE);            
+    } else {
+        infile.read((char *) input.data(), filesize);
+        s20.encryptBytes(input);
+        outfile.write((char *) input.data(), filesize);
     }
 
     infile.close();

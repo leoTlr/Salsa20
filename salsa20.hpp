@@ -47,7 +47,7 @@ public:
     Salsa20(const std::string key, bool hex_key);
     Salsa20(std::vector<uint8_t> key);
 
-    // set Nonce/IV, will also set counter to 0
+    //  set Nonce/IV, will also set counter to 0
     void setNonce(const std::string nonce_hex);
     void setNonce(const uint64_t nonce);
 
@@ -55,6 +55,9 @@ public:
         input will stay unchanged */
     void encryptBytes(const uint8_t* input, uint8_t* output, const size_t num_bytes);
     void encryptBytes(const std::vector<uint8_t>& input, std::vector<uint8_t>& output);
+
+    //  encrypt input in place
+    void encryptBytes(std::vector<uint8_t>& input);
 
     /*  test-cases for every (private) function of encryption process
     (values from http://cr.yp.to/snuffle/spec.pdf)  

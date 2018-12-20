@@ -268,6 +268,13 @@ void Salsa20::encryptBytes(const vector<uint8_t>& input, vector<uint8_t>& output
     encryptBytes(input.data(), output.data(), input.size());
 }
 
+// wrapper to use encryptBytes with std::vector, encrypting input in place
+void Salsa20::encryptBytes(vector<uint8_t>& input) {
+    if (input.size() == 0) return;
+
+    encryptBytes(input.data(), input.data(), input.size());
+}
+
 // interpret string as hex and put values in littleEndianWordFromBytes()
 uint32_t Salsa20::hexCharsToLittleEndianWord(const string hex_str, size_t start_pos) {
     assert(all_of(hex_str.begin(), hex_str.end(), ::isxdigit));

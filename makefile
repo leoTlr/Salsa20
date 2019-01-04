@@ -3,7 +3,7 @@
 appname := salsa
 
 CXX := g++
-CXXFLAGS := -Wall -Wextra -g
+CXXFLAGS := -Wall -Wextra
 LDFLAGS :=
 LDLIBS :=
 

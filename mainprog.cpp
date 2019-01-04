@@ -6,16 +6,21 @@
 
 #include "salsa20.hpp"
 
+#define NR_POS_ARGS 4
+#define NR_OPT_ARGS 2
+#define MIN_ARGC (NR_POS_ARGS+1)
+#define MAX_ARGC (NR_POS_ARGS+NR_OPT_ARGS+1)
+
 using namespace std;
 
 /*  Small program to show sample usage of this Salsa20 cipher implementation
 
-    Encrypt infile with Salsa20 into outfile
+    Encrypt infile with Salsa20 into outfile (or with Chacha20 if --chacha20 set)
 */
 
 void usage(string progname) {
     cout << "usage:\n"
-         << progname << " infile outfile key nonce [--hex-key]\n"
+         << progname << " infile outfile key nonce [--hex-key] [--chacha20]\n"
          << "32 byte key as (ascii interpreted) str, 8 byte nonce in hex (without 0x prefix)" << endl;
     exit(EXIT_FAILURE);
 }
@@ -23,18 +28,25 @@ void usage(string progname) {
 int main(int argc, char** argv){
 
     // -------------- input validation --------------------
-    if (argc < 5) usage(argv[0]);
+    if (argc < MIN_ARGC || argc > MAX_ARGC)
+        usage(argv[0]);
 
     string infile_str=argv[1], outfile_str=argv[2], key_str=argv[3], nonce_hex_str=argv[4];
-    string hex_key_arg = "";
-    bool hex_key = false;
-    if (argc == 6) {
-        hex_key_arg += string(argv[5]);
-        if (hex_key_arg == "--hex-key")
-            hex_key = true;
-        else {
-            cerr << "unknown arguemnt " << hex_key_arg << endl;
-            exit(EXIT_FAILURE); 
+    string optional_arg;
+    bool is_hex_key = false;
+    bool use_chacha = false;
+
+    if (argc > MIN_ARGC) {
+        for (int i=MIN_ARGC; i<argc; i++) {
+            optional_arg = string(argv[i]);
+            if (optional_arg == "--hex-key")
+                is_hex_key = true;
+            else if (optional_arg == "--chacha20")
+                use_chacha = true;
+            else {
+                cerr << "unknown arguemnt: " << optional_arg << endl;
+                exit(EXIT_FAILURE); 
+            }
         }
     }
 
@@ -49,17 +61,14 @@ int main(int argc, char** argv){
         exit(EXIT_FAILURE); 
     }
 
-    Salsa20* s_ptr = nullptr;
+    SnuffleStreamCipher* cipher_ptr;
     try {
-        if (hex_key) {
-            Salsa20 s20obj = Salsa20(key_str, true);
-            s_ptr = &s20obj;
-        } else {
-            Salsa20 s20obj = Salsa20(key_str, false);
-            s_ptr = &s20obj;
-        }
+        if (use_chacha) 
+            cipher_ptr = new Chacha20(key_str, is_hex_key);
+        else 
+            cipher_ptr = new Salsa20(key_str, is_hex_key);
     } catch (length_error&) {
-        if (!hex_key)
+        if (!is_hex_key)
             cerr << "invalid key size. has to be 16 or 32 (ascii interpreted) chars" << endl;
         else
             cerr << "invalid key size. has to be 32 or 64 hex chars" << endl;
@@ -67,11 +76,11 @@ int main(int argc, char** argv){
         cerr << "all key chars have to be hex chars (no 0x prefix)" << endl;
     }
 
-    if (!s_ptr) exit(EXIT_FAILURE);
-    Salsa20 s20 = *s_ptr;
+    if (!cipher_ptr)
+        exit(EXIT_FAILURE);    
 
     try {
-        s20.setNonce(nonce_hex_str);
+        cipher_ptr->setNonce(nonce_hex_str);
     } catch (length_error&) {
         cerr << "invalid nonce size. has to be 8 byte (16 hex interpreted chars) without 0x prefix)" << endl;
         exit(EXIT_FAILURE);
@@ -104,11 +113,12 @@ int main(int argc, char** argv){
         exit(EXIT_FAILURE);            
     } else {
         infile.read((char *) input.data(), filesize);
-        s20.encryptBytes(input);
+        cipher_ptr->encryptBytes(input);
         outfile.write((char *) input.data(), filesize);
     }
 
     infile.close();
     outfile.close();
+    delete cipher_ptr;
     return 0;
 }

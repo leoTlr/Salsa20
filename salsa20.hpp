@@ -64,6 +64,16 @@ public:
     virtual void setNonce(const std::string nonce_hex) = 0;
     virtual void setNonce(const uint64_t nonce) = 0;
 
+    /*  start keystream generation after nr_blocks*64byte.
+        use this to init keystream generation with counter > 0
+
+        i.e.: using skipBlocks(3) before en-/decryption, the first call to keyStreamBlock() will yield the 4th block of keystream
+        (-> start keystream at 3*64+1=193th byte instead of first)
+        this way you can decrypt a part of a large stream without decrypting everything before this part
+
+        TODO: implement for byte offset instead 64byte block offset */
+    void skipBlocks(unsigned nr_blocks);
+
     /*  encrypt bytes from input into output
         input will stay unchanged */
     void encryptBytes(const uint8_t* input, uint8_t* output, const size_t num_bytes);

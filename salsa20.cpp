@@ -145,6 +145,19 @@ void SnuffleStreamCipher::keyStreamBlock(uint8_t* out_block) {
     incrementCounter();
 }
 
+/*  start keystream generation after nr_blocks*64byte.
+    use this to init keystream generation with counter > 0
+
+    i.e.: using skipBlocks(3) before en-/decryption, the first call to keyStreamBlock() will yield the 4th block of keystream
+    (-> start keystream at 3*64+1=193th byte instead of first)
+    this way you can decrypt a part of a large stream without decrypting everything before this part
+
+    TODO: implement for byte offset instead (64byte) block offset */
+void SnuffleStreamCipher::skipBlocks(unsigned nr_blocks) {
+    for (; nr_blocks > 0; nr_blocks--)
+        incrementCounter();
+}
+
 // encrypt num_bytes bytes from input into output
 void SnuffleStreamCipher::encryptBytes(const uint8_t* input, uint8_t* output, const size_t num_bytes) {
     assert(input != nullptr && output != nullptr);
